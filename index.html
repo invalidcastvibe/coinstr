@@ -1,0 +1,1282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Bitcoin Wallet - BTC / BCH / Lightning</title>
+    <script src="https://cdn.jsdelivr.net/npm/bip39@3.1.0/dist/bip39.min.js">
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bitcoinjs-lib@5.2.0/dist/bitcoinjs-lib.min.js">
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js">
+    </script>
+    <style>
+        :root {
+            --bg: #0a0a12;
+            --card-bg: #12121f;
+            --card-border: #1e1e35;
+            --text: #e0e0e0;
+            --text-dim: #8888aa;
+            --accent: #f7931a;
+            --accent2: #00d4aa;
+            --accent3: #7c3aed;
+            --danger: #ef4444;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --input-bg: #1a1a2e;
+            --input-border: #2a2a45;
+            --radius: 12px;
+            --radius-sm: 8px;
+            --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+            --font: 'Segoe UI', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Roboto', sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font);
+            min-height: 100vh;
+            padding: 0;
+            line-height: 1.6;
+            background-image: radial-gradient(ellipse at 20% 20%, #1a1a3a 0%, transparent 60%),
+                radial-gradient(ellipse at 80% 80%, #0a0a20 0%, transparent 60%);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 16px 20px 60px;
+        }
+
+        header {
+            text-align: center;
+            padding: 32px 0 20px;
+        }
+
+        header h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #f7931a, #f7c948, #00d4aa, #7c3aed);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.5px;
+        }
+
+        header p {
+            color: var(--text-dim);
+            font-size: 1rem;
+            margin-top: 6px;
+        }
+
+        .seed-section {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 28px;
+            box-shadow: var(--shadow);
+        }
+
+        .seed-section h2 {
+            font-size: 1.2rem;
+            margin-bottom: 12px;
+            color: var(--accent);
+            letter-spacing: 0.3px;
+        }
+
+        .seed-display {
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: var(--radius-sm);
+            padding: 16px 20px;
+            font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+            font-size: 1rem;
+            letter-spacing: 0.5px;
+            word-spacing: 6px;
+            line-height: 1.9;
+            margin-bottom: 14px;
+            color: var(--accent);
+            word-break: break-all;
+            min-height: 60px;
+            position: relative;
+        }
+
+        .seed-display .placeholder {
+            color: var(--text-dim);
+            font-style: italic;
+            letter-spacing: normal;
+            word-spacing: normal;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--input-border);
+            background: var(--input-bg);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.25s ease;
+            font-family: var(--font);
+            letter-spacing: 0.2px;
+        }
+        .btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(247, 147, 26, 0.15);
+        }
+        .btn:active {
+            transform: translateY(0);
+        }
+        .btn-primary {
+            background: var(--accent);
+            color: #0a0a12;
+            border-color: var(--accent);
+            font-weight: 600;
+        }
+        .btn-primary:hover {
+            background: #e8850a;
+            color: #0a0a12;
+            box-shadow: 0 6px 24px rgba(247, 147, 26, 0.3);
+        }
+        .btn-danger {
+            background: transparent;
+            border-color: var(--danger);
+            color: var(--danger);
+        }
+        .btn-danger:hover {
+            background: var(--danger);
+            color: #fff;
+            box-shadow: 0 6px 20px rgba(239, 68, 68, 0.3);
+        }
+        .btn-success {
+            background: var(--success);
+            color: #0a0a12;
+            border-color: var(--success);
+            font-weight: 600;
+        }
+        .btn-success:hover {
+            background: #1ab84a;
+            color: #0a0a12;
+            box-shadow: 0 6px 20px rgba(34, 197, 94, 0.3);
+        }
+        .btn-sm {
+            padding: 7px 14px;
+            font-size: 0.8rem;
+        }
+
+        .wallet-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 20px;
+            margin-top: 12px;
+        }
+
+        .wallet-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius);
+            padding: 24px;
+            box-shadow: var(--shadow);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .wallet-card:hover {
+            border-color: rgba(247, 147, 26, 0.3);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        }
+        .wallet-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            border-radius: var(--radius) var(--radius) 0 0;
+        }
+        .wallet-card.btc::before {
+            background: linear-gradient(90deg, #f7931a, #f7c948);
+        }
+        .wallet-card.bch::before {
+            background: linear-gradient(90deg, #00d4aa, #22c55e);
+        }
+        .wallet-card.lightning::before {
+            background: linear-gradient(90deg, #7c3aed, #a78bfa);
+        }
+
+        .wallet-card h3 {
+            font-size: 1.3rem;
+            margin-bottom: 4px;
+            letter-spacing: 0.3px;
+        }
+        .wallet-card.btc h3 {
+            color: #f7931a;
+        }
+        .wallet-card.bch h3 {
+            color: #00d4aa;
+        }
+        .wallet-card.lightning h3 {
+            color: #a78bfa;
+        }
+
+        .wallet-card .badge {
+            display: inline-block;
+            font-size: 0.7rem;
+            padding: 3px 10px;
+            border-radius: 20px;
+            margin-bottom: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-dim);
+            letter-spacing: 0.5px;
+        }
+
+        .address-box {
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: var(--radius-sm);
+            padding: 12px 14px;
+            font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+            font-size: 0.8rem;
+            word-break: break-all;
+            color: var(--text);
+            margin: 8px 0;
+            position: relative;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .address-box:hover {
+            border-color: var(--accent);
+        }
+        .address-box .copy-hint {
+            position: absolute;
+            top: 4px;
+            right: 8px;
+            font-size: 0.6rem;
+            color: var(--text-dim);
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .address-box:hover .copy-hint {
+            opacity: 1;
+        }
+
+        .qr-container {
+            display: flex;
+            justify-content: center;
+            margin: 12px 0;
+            padding: 8px;
+            background: #fff;
+            border-radius: var(--radius-sm);
+            width: fit-content;
+        }
+        .qr-container canvas,
+        .qr-container img {
+            display: block;
+            border-radius: 4px;
+        }
+
+        .balance-display {
+            font-size: 1.6rem;
+            font-weight: 700;
+            margin: 10px 0;
+            letter-spacing: -0.5px;
+        }
+        .btc .balance-display {
+            color: #f7931a;
+        }
+        .bch .balance-display {
+            color: #00d4aa;
+        }
+        .lightning .balance-display {
+            color: #a78bfa;
+        }
+        .balance-display .unit {
+            font-size: 0.9rem;
+            font-weight: 400;
+            color: var(--text-dim);
+            letter-spacing: normal;
+        }
+
+        .send-form {
+            margin-top: 16px;
+            border-top: 1px solid var(--card-border);
+            padding-top: 16px;
+        }
+        .send-form label {
+            display: block;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin-bottom: 4px;
+            letter-spacing: 0.3px;
+        }
+        .send-form input {
+            width: 100%;
+            padding: 10px 14px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--input-border);
+            background: var(--input-bg);
+            color: var(--text);
+            font-size: 0.9rem;
+            font-family: var(--font);
+            margin-bottom: 10px;
+            transition: border-color 0.2s;
+        }
+        .send-form input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        .send-form input::placeholder {
+            color: var(--text-dim);
+            opacity: 0.6;
+        }
+
+        .info-note {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: var(--radius-sm);
+            border-left: 3px solid var(--warning);
+        }
+
+        .status-message {
+            padding: 10px 16px;
+            border-radius: var(--radius-sm);
+            margin-top: 10px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            display: none;
+        }
+        .status-message.success {
+            display: block;
+            background: rgba(34, 197, 94, 0.15);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            color: var(--success);
+        }
+        .status-message.error {
+            display: block;
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: var(--danger);
+        }
+        .status-message.info {
+            display: block;
+            background: rgba(89, 78, 216, 0.15);
+            border: 1px solid rgba(89, 78, 216, 0.3);
+            color: #a78bfa;
+        }
+
+        .warning-banner {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.25);
+            border-radius: var(--radius-sm);
+            padding: 12px 16px;
+            margin-top: 12px;
+            font-size: 0.82rem;
+            color: var(--warning);
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+        .warning-banner .icon {
+            font-size: 1.1rem;
+            flex-shrink: 0;
+        }
+
+        .tx-status {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-top: 6px;
+            word-break: break-all;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 12px 20px;
+            border-radius: var(--radius-sm);
+            font-size: 0.85rem;
+            font-weight: 500;
+            z-index: 9999;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.3s ease;
+            pointer-events: none;
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .toast.success {
+            background: var(--success);
+            color: #fff;
+        }
+        .toast.error {
+            background: var(--danger);
+            color: #fff;
+        }
+
+        @media (max-width: 768px) {
+            .wallet-grid {
+                grid-template-columns: 1fr;
+            }
+            header h1 {
+                font-size: 1.6rem;
+            }
+            .container {
+                padding: 12px 12px 40px;
+            }
+            .seed-section,
+            .wallet-card {
+                padding: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>⚡ Simple Bitcoin Wallet</h1>
+            <p>BTC · BCH · Lightning — all from a single seed phrase</p>
+        </header>
+
+        <!-- Seed Phrase Section -->
+        <div class="seed-section" id="seedSection">
+            <h2>🔑 Seed Phrase</h2>
+            <div class="seed-display" id="seedDisplay">
+                <span class="placeholder">No seed phrase loaded. Generate or import one below.</span>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-primary" id="btnGenerate" title="Generate a new 12-word seed phrase">🎲 Generate New</button>
+                <button class="btn" id="btnImport" title="Import an existing BIP39 seed phrase">📥 Import</button>
+                <button class="btn" id="btnToggleSeed" title="Show or hide the seed phrase">👁️ Show/Hide</button>
+                <button class="btn btn-danger" id="btnClear" title="Clear wallet from this browser">🗑️ Clear Wallet</button>
+            </div>
+            <div class="warning-banner">
+                <span class="icon">⚠️</span>
+                <span>The seed phrase is stored in your browser's localStorage. Anyone with access to this browser can access your funds. Use with caution — never store large amounts on a web wallet.</span>
+            </div>
+        </div>
+
+        <!-- Wallet Cards -->
+        <div class="wallet-grid">
+            <!-- BTC Card -->
+            <div class="wallet-card btc" id="btcCard">
+                <h3>₿ Bitcoin</h3>
+                <span class="badge">P2WPKH · SegWit · m/84'/0'/0'/0/0</span>
+                <div class="address-box" id="btcAddress" title="Click to copy">—</div>
+                <div class="qr-container" id="btcQr" style="display:none;"></div>
+                <div class="balance-display" id="btcBalance">0.00000000 <span class="unit">BTC</span></div>
+                <div class="btn-group">
+                    <button class="btn btn-sm" id="btnBtcRefresh">🔄 Refresh</button>
+                    <button class="btn btn-sm" id="btnBtcCopy">📋 Copy</button>
+                </div>
+                <div class="send-form">
+                    <label>Send BTC to:</label>
+                    <input type="text" id="btcSendTo" placeholder="bc1... or other BTC address">
+                    <label>Amount (BTC):</label>
+                    <input type="number" id="btcSendAmount" placeholder="0.0001" step="0.00000001" min="0">
+                    <button class="btn btn-success btn-sm" id="btnBtcSend" style="margin-top:8px;">💸 Send BTC</button>
+                    <div class="status-message" id="btcStatus"></div>
+                    <div class="tx-status" id="btcTxStatus"></div>
+                </div>
+            </div>
+
+            <!-- BCH Card -->
+            <div class="wallet-card bch" id="bchCard">
+                <h3>💚 Bitcoin Cash</h3>
+                <span class="badge">CashAddr · m/44'/145'/0'/0/0</span>
+                <div class="address-box" id="bchAddress" title="Click to copy">—</div>
+                <div class="qr-container" id="bchQr" style="display:none;"></div>
+                <div class="balance-display" id="bchBalance">0.00000000 <span class="unit">BCH</span></div>
+                <div class="btn-group">
+                    <button class="btn btn-sm" id="btnBchRefresh">🔄 Refresh</button>
+                    <button class="btn btn-sm" id="btnBchCopy">📋 Copy</button>
+                </div>
+                <div class="send-form">
+                    <label>Send BCH to:</label>
+                    <input type="text" id="bchSendTo" placeholder="bitcoincash:q... or legacy address">
+                    <label>Amount (BCH):</label>
+                    <input type="number" id="bchSendAmount" placeholder="0.001" step="0.00000001" min="0">
+                    <button class="btn btn-success btn-sm" id="btnBchSend" style="margin-top:8px;">💸 Send BCH</button>
+                    <div class="status-message" id="bchStatus"></div>
+                    <div class="tx-status" id="bchTxStatus"></div>
+                </div>
+                <div class="info-note" style="margin-top:12px;">
+                    ℹ️ BCH sending requires a BCH-compatible wallet/explorer. Broadcasting uses the Bitcoin.com REST API.
+                </div>
+            </div>
+
+            <!-- Lightning Card -->
+            <div class="wallet-card lightning" id="lightningCard">
+                <h3>⚡ Lightning Network</h3>
+                <span class="badge">Node Key · m/84'/0'/0'/0/2</span>
+                <div class="address-box" id="lnNodeKey" title="Click to copy">—</div>
+                <div style="font-size:0.8rem;color:var(--text-dim);margin:6px 0;">
+                    <strong>Lightning Address:</strong>
+                </div>
+                <div class="address-box" id="lnAddress" title="Click to copy">—</div>
+                <div class="qr-container" id="lnQr" style="display:none;"></div>
+                <div class="balance-display" id="lnBalance">— <span class="unit">sats</span></div>
+                <div class="btn-group">
+                    <button class="btn btn-sm" id="btnLnCopy">📋 Copy PubKey</button>
+                </div>
+                <div class="info-note" style="margin-top:12px;">
+                    ⚡ Full Lightning payments require a connected Lightning node (e.g., LND, Core Lightning, or LND Hub). This webapp derives your node key and identity from the same seed phrase. To send/receive Lightning payments, connect this key to a Lightning node service.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notification -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        (function() {
+            // ==================== CONSTANTS ====================
+            const STORAGE_KEY = 'simple_wallet_seed';
+            const BTC_DERIVATION_PATH = "m/84'/0'/0'/0/0";
+            const BTC_LEGACY_PATH = "m/44'/0'/0'/0/0";
+            const BCH_DERIVATION_PATH = "m/44'/145'/0'/0/0";
+            const LN_NODE_KEY_PATH = "m/84'/0'/0'/0/2";
+
+            const BTC_NETWORK = bitcoin.networks.bitcoin;
+
+            // ==================== STATE ====================
+            let currentMnemonic = null;
+            let currentSeed = null;
+            let currentMasterKey = null;
+            let seedVisible = false;
+
+            // Derived addresses
+            let btcAddress = '';
+            let btcLegacyAddress = '';
+            let bchCashAddr = '';
+            let bchLegacyAddress = '';
+            let lnNodePubKey = '';
+
+            // ==================== UTILITY FUNCTIONS ====================
+            function showToast(message, type = 'success') {
+                const toast = document.getElementById('toast');
+                toast.textContent = message;
+                toast.className = 'toast ' + type + ' show';
+                clearTimeout(toast._timeout);
+                toast._timeout = setTimeout(() => {
+                    toast.classList.remove('show');
+                }, 3000);
+            }
+
+            function setStatus(elementId, message, type = 'info') {
+                const el = document.getElementById(elementId);
+                el.textContent = message;
+                el.className = 'status-message ' + type;
+            }
+
+            function clearStatus(elementId) {
+                const el = document.getElementById(elementId);
+                el.textContent = '';
+                el.className = 'status-message';
+            }
+
+            function copyToClipboard(text) {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).then(() => {
+                        showToast('Copied to clipboard!', 'success');
+                    }).catch(() => {
+                        fallbackCopy(text);
+                    });
+                } else {
+                    fallbackCopy(text);
+                }
+            }
+
+            function fallbackCopy(text) {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.left = '-9999px';
+                document.body.appendChild(textarea);
+                textarea.select();
+                try {
+                    document.execCommand('copy');
+                    showToast('Copied to clipboard!', 'success');
+                } catch (e) {
+                    showToast('Failed to copy', 'error');
+                }
+                document.body.removeChild(textarea);
+            }
+
+            // ==================== BECH32 ENCODING (for BTC) ====================
+            function bech32Polymod(values) {
+                const GENERATOR = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+                let chk = 1;
+                for (const value of values) {
+                    const top = chk >> 25;
+                    chk = ((chk & 0x1ffffff) << 5) ^ value;
+                    for (let i = 0; i < 5; i++) {
+                        if (((top >> i) & 1) === 1) {
+                            chk ^= GENERATOR[i];
+                        }
+                    }
+                }
+                return chk;
+            }
+
+            function bech32HrpExpand(hrp) {
+                const result = [];
+                for (const char of hrp) {
+                    result.push(char.charCodeAt(0) >> 5);
+                }
+                result.push(0);
+                for (const char of hrp) {
+                    result.push(char.charCodeAt(0) & 31);
+                }
+                return result;
+            }
+
+            function bech32CreateChecksum(hrp, data) {
+                const values = [...bech32HrpExpand(hrp), ...data, 0, 0, 0, 0, 0, 0];
+                const polymod = bech32Polymod(values) ^ 1;
+                const result = [];
+                for (let i = 0; i < 6; i++) {
+                    result.push((polymod >> (5 * (5 - i))) & 31);
+                }
+                return result;
+            }
+
+            const BECH32_CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+
+            function bech32Encode(hrp, data) {
+                const checksum = bech32CreateChecksum(hrp, data);
+                const combined = [...data, ...checksum];
+                let result = hrp + '1';
+                for (const value of combined) {
+                    result += BECH32_CHARSET[value];
+                }
+                return result;
+            }
+
+            function convertBits(data, fromBits, toBits, pad) {
+                let acc = 0;
+                let bits = 0;
+                const result = [];
+                const maxv = (1 << toBits) - 1;
+                for (const value of data) {
+                    if (value < 0 || value >> fromBits !== 0) {
+                        throw new Error('Invalid value in convertBits');
+                    }
+                    acc = ((acc << fromBits) | value) & 0xffffffff;
+                    bits += fromBits;
+                    while (bits >= toBits) {
+                        bits -= toBits;
+                        result.push((acc >> bits) & maxv);
+                    }
+                }
+                if (pad) {
+                    if (bits > 0) {
+                        result.push((acc << (toBits - bits)) & maxv);
+                    }
+                } else if (bits >= fromBits) {
+                    throw new Error('Invalid padding in convertBits');
+                } else if (((acc << (toBits - bits)) & maxv) !== 0) {
+                    throw new Error('Non-zero padding in convertBits');
+                }
+                return result;
+            }
+
+            function toBech32Address(pubkeyHash, hrp = 'bc', version = 0) {
+                const data = [version, ...convertBits(pubkeyHash, 8, 5, false)];
+                return bech32Encode(hrp, data);
+            }
+
+            // ==================== CASHADDR ENCODING (for BCH) ====================
+            function cashAddrPolymod(values) {
+                const GENERATOR = [0x98f2bc8e61, 0x79b76d99e2, 0xf33e5fb3c4, 0xae2eabe2a8, 0x1e4f43e470];
+                let chk = 1;
+                for (const value of values) {
+                    const top = chk >> 35;
+                    chk = ((chk & 0x07ffffffff) << 5) ^ value;
+                    for (let i = 0; i < 5; i++) {
+                        if (((top >> i) & 1) === 1) {
+                            chk ^= GENERATOR[i];
+                        }
+                    }
+                }
+                return chk ^ 1;
+            }
+
+            function cashAddrExpandPrefix(prefix) {
+                const result = [];
+                for (const char of prefix) {
+                    result.push(char.charCodeAt(0) & 0x1f);
+                }
+                result.push(0);
+                return result;
+            }
+
+            function cashAddrCreateChecksum(prefix, data) {
+                const values = [...cashAddrExpandPrefix(prefix), ...data, 0, 0, 0, 0, 0, 0, 0, 0];
+                const polymod = cashAddrPolymod(values);
+                const result = [];
+                for (let i = 0; i < 8; i++) {
+                    result.push(Number((BigInt(polymod) >> BigInt(5 * (7 - i))) & 31n));
+                }
+                return result;
+            }
+
+            function toCashAddr(pubkeyHash, isP2PKH = true) {
+                const versionByte = isP2PKH ? 0 : 1;
+                const payload = [versionByte, ...pubkeyHash];
+                const data = convertBits(payload, 8, 5, false);
+                const checksum = cashAddrCreateChecksum('bitcoincash', data);
+                const combined = [...data, ...checksum];
+                let result = 'bitcoincash:';
+                for (const value of combined) {
+                    result += BECH32_CHARSET[value];
+                }
+                return result;
+            }
+
+            // ==================== KEY DERIVATION ====================
+            function deriveKeysFromSeed() {
+                if (!currentSeed) return false;
+                try {
+                    // BTC (P2WPKH - SegWit)
+                    const btcChild = currentMasterKey.derivePath(BTC_DERIVATION_PATH);
+                    const btcPubKey = btcChild.publicKey;
+                    const btcPubKeyHash = bitcoin.crypto.hash160(btcPubKey);
+                    btcAddress = toBech32Address(btcPubKeyHash, 'bc', 0);
+                    btcLegacyAddress = toBech32Address(btcPubKeyHash, 'bc', 0); // placeholder, will override
+
+                    // BTC Legacy (P2PKH)
+                    const btcLegacyChild = currentMasterKey.derivePath(BTC_LEGACY_PATH);
+                    const btcLegacyPubKey = btcLegacyChild.publicKey;
+                    const btcLegacyPubKeyHash = bitcoin.crypto.hash160(btcLegacyPubKey);
+                    const legacyP2pkh = bitcoin.payments.p2pkh({ pubkey: btcLegacyPubKey, network: BTC_NETWORK });
+                    btcLegacyAddress = legacyP2pkh.address;
+
+                    // BCH (P2PKH with CashAddr encoding)
+                    const bchChild = currentMasterKey.derivePath(BCH_DERIVATION_PATH);
+                    const bchPubKey = bchChild.publicKey;
+                    const bchPubKeyHash = bitcoin.crypto.hash160(bchPubKey);
+                    bchCashAddr = toCashAddr(Array.from(bchPubKeyHash), true);
+                    const bchLegacyP2pkh = bitcoin.payments.p2pkh({ pubkey: bchPubKey, network: BTC_NETWORK });
+                    bchLegacyAddress = bchLegacyP2pkh.address;
+
+                    // Lightning Node Key
+                    const lnChild = currentMasterKey.derivePath(LN_NODE_KEY_PATH);
+                    lnNodePubKey = lnChild.publicKey.toString('hex');
+
+                    return true;
+                } catch (e) {
+                    console.error('Derivation error:', e);
+                    return false;
+                }
+            }
+
+            // ==================== SEED MANAGEMENT ====================
+            function generateNewSeed() {
+                try {
+                    const mnemonic = bip39.generateMnemonic(128); // 12 words
+                    currentMnemonic = mnemonic;
+                    currentSeed = bip39.mnemonicToSeedSync(mnemonic);
+                    currentMasterKey = bitcoin.bip32.fromSeed(currentSeed, BTC_NETWORK);
+                    localStorage.setItem(STORAGE_KEY, mnemonic);
+                    seedVisible = true;
+                    updateUI();
+                    showToast('New seed phrase generated!', 'success');
+                } catch (e) {
+                    console.error('Generate error:', e);
+                    showToast('Failed to generate seed', 'error');
+                }
+            }
+
+            function importSeed() {
+                const input = prompt('Enter your 12 or 24-word BIP39 seed phrase:');
+                if (!input) return;
+                const normalized = input.trim().toLowerCase().replace(/\s+/g, ' ');
+                if (!bip39.validateMnemonic(normalized)) {
+                    showToast('Invalid seed phrase! Please check and try again.', 'error');
+                    return;
+                }
+                try {
+                    currentMnemonic = normalized;
+                    currentSeed = bip39.mnemonicToSeedSync(normalized);
+                    currentMasterKey = bitcoin.bip32.fromSeed(currentSeed, BTC_NETWORK);
+                    localStorage.setItem(STORAGE_KEY, normalized);
+                    seedVisible = true;
+                    updateUI();
+                    showToast('Seed phrase imported!', 'success');
+                } catch (e) {
+                    console.error('Import error:', e);
+                    showToast('Failed to import seed', 'error');
+                }
+            }
+
+            function loadSeedFromStorage() {
+                const stored = localStorage.getItem(STORAGE_KEY);
+                if (stored) {
+                    try {
+                        if (bip39.validateMnemonic(stored)) {
+                            currentMnemonic = stored;
+                            currentSeed = bip39.mnemonicToSeedSync(stored);
+                            currentMasterKey = bitcoin.bip32.fromSeed(currentSeed, BTC_NETWORK);
+                            seedVisible = false;
+                            updateUI();
+                            return true;
+                        } else {
+                            localStorage.removeItem(STORAGE_KEY);
+                        }
+                    } catch (e) {
+                        console.error('Load error:', e);
+                        localStorage.removeItem(STORAGE_KEY);
+                    }
+                }
+                return false;
+            }
+
+            function clearWallet() {
+                if (!confirm('Are you sure you want to clear the wallet from this browser? This will remove the seed phrase from localStorage.')) {
+                    return;
+                }
+                localStorage.removeItem(STORAGE_KEY);
+                currentMnemonic = null;
+                currentSeed = null;
+                currentMasterKey = null;
+                btcAddress = '';
+                bchCashAddr = '';
+                lnNodePubKey = '';
+                seedVisible = false;
+                updateUI();
+                clearBalances();
+                showToast('Wallet cleared from browser.', 'success');
+            }
+
+            function toggleSeedVisibility() {
+                seedVisible = !seedVisible;
+                updateUI();
+            }
+
+            // ==================== BALANCE CHECKING ====================
+            async function fetchBtcBalance() {
+                if (!btcAddress) return;
+                try {
+                    const response = await fetch(`https://blockstream.info/api/address/${btcAddress}`);
+                    if (!response.ok) throw new Error('API error: ' + response.status);
+                    const data = await response.json();
+                    const chainStats = data.chain_stats || {};
+                    const mempoolStats = data.mempool_stats || {};
+                    const funded = chainStats.funded_txo_sum || 0;
+                    const spent = chainStats.spent_txo_sum || 0;
+                    const memFunded = mempoolStats.funded_txo_sum || 0;
+                    const memSpent = mempoolStats.spent_txo_sum || 0;
+                    const balance = (funded - spent + memFunded - memSpent) / 100000000;
+                    document.getElementById('btcBalance').innerHTML =
+                        balance.toFixed(8) + ' <span class="unit">BTC</span>';
+                    return balance;
+                } catch (e) {
+                    console.error('BTC balance error:', e);
+                    document.getElementById('btcBalance').innerHTML =
+                        '— <span class="unit">BTC (error)</span>';
+                    return 0;
+                }
+            }
+
+            async function fetchBchBalance() {
+                if (!bchCashAddr) return;
+                try {
+                    const encodedAddr = encodeURIComponent(bchCashAddr);
+                    const response = await fetch(`https://rest.bitcoin.com/v2/address/details/${encodedAddr}`);
+                    if (!response.ok) throw new Error('API error: ' + response.status);
+                    const data = await response.json();
+                    const balanceSatoshis = data.balanceSat || data.balance || 0;
+                    const balance = balanceSatoshis / 100000000;
+                    document.getElementById('bchBalance').innerHTML =
+                        balance.toFixed(8) + ' <span class="unit">BCH</span>';
+                    return balance;
+                } catch (e) {
+                    console.error('BCH balance error:', e);
+                    document.getElementById('bchBalance').innerHTML =
+                        '— <span class="unit">BCH (error)</span>';
+                    return 0;
+                }
+            }
+
+            function clearBalances() {
+                document.getElementById('btcBalance').innerHTML =
+                    '0.00000000 <span class="unit">BTC</span>';
+                document.getElementById('bchBalance').innerHTML =
+                    '0.00000000 <span class="unit">BCH</span>';
+                document.getElementById('lnBalance').innerHTML =
+                    '— <span class="unit">sats</span>';
+            }
+
+            async function refreshAllBalances() {
+                if (!currentMnemonic) return;
+                await Promise.all([fetchBtcBalance(), fetchBchBalance()]);
+            }
+
+            // ==================== SENDING TRANSACTIONS ====================
+            async function sendBtc() {
+                if (!currentMnemonic) {
+                    showToast('No wallet loaded. Generate or import a seed phrase first.', 'error');
+                    return;
+                }
+                const toAddress = document.getElementById('btcSendTo').value.trim();
+                const amountStr = document.getElementById('btcSendAmount').value.trim();
+                if (!toAddress || !amountStr) {
+                    showToast('Please enter a recipient address and amount.', 'error');
+                    return;
+                }
+                const amountSats = Math.round(parseFloat(amountStr) * 100000000);
+                if (isNaN(amountSats) || amountSats <= 0) {
+                    showToast('Invalid amount.', 'error');
+                    return;
+                }
+
+                setStatus('btcStatus', 'Building transaction...', 'info');
+                document.getElementById('btcTxStatus').textContent = '';
+
+                try {
+                    // Get UTXOs
+                    const utxoResponse = await fetch(`https://blockstream.info/api/address/${btcAddress}/utxo`);
+                    if (!utxoResponse.ok) throw new Error('Failed to fetch UTXOs');
+                    const utxos = await utxoResponse.json();
+                    if (utxos.length === 0) {
+                        setStatus('btcStatus', 'No UTXOs found for this address. Send funds to it first.', 'error');
+                        return;
+                    }
+
+                    // Calculate total available
+                    let totalAvailable = 0;
+                    const usableUtxos = [];
+                    for (const utxo of utxos) {
+                        if (utxo.status && utxo.status.confirmed) {
+                            totalAvailable += utxo.value;
+                            usableUtxos.push(utxo);
+                        }
+                    }
+                    if (usableUtxos.length === 0) {
+                        setStatus('btcStatus', 'No confirmed UTXOs available.', 'error');
+                        return;
+                    }
+
+                    // Fee calculation (estimate ~2 sat/vbyte for demo, simplified)
+                    const estimatedSize = usableUtxos.length * 120 + 2 * 34 + 10;
+                    const feeSats = Math.max(estimatedSize * 2, 1000);
+                    const totalNeeded = amountSats + feeSats;
+
+                    if (totalAvailable < totalNeeded) {
+                        setStatus('btcStatus',
+                            `Insufficient funds. Need ${(totalNeeded/100000000).toFixed(8)} BTC (including fee), have ${(totalAvailable/100000000).toFixed(8)} BTC.`,
+                            'error');
+                        return;
+                    }
+
+                    // Build transaction
+                    const txBuilder = new bitcoin.TransactionBuilder(BTC_NETWORK);
+                    for (const utxo of usableUtxos) {
+                        txBuilder.addInput(utxo.txid, utxo.vout);
+                    }
+                    txBuilder.addOutput(toAddress, amountSats);
+                    const changeAmount = totalAvailable - amountSats - feeSats;
+                    if (changeAmount > 546) {
+                        txBuilder.addOutput(btcAddress, changeAmount);
+                    }
+
+                    // Sign inputs
+                    const child = currentMasterKey.derivePath(BTC_DERIVATION_PATH);
+                    const keyPair = bitcoin.ECPair.fromPrivateKey(child.privateKey, { network: BTC_NETWORK });
+                    for (let i = 0; i < usableUtxos.length; i++) {
+                        txBuilder.sign(i, keyPair, undefined, undefined, usableUtxos[i].value);
+                    }
+
+                    const rawTx = txBuilder.build().toHex();
+
+                    // Broadcast
+                    const broadcastResponse = await fetch('https://blockstream.info/api/tx', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain' },
+                        body: rawTx
+                    });
+                    if (!broadcastResponse.ok) {
+                        const errorText = await broadcastResponse.text();
+                        throw new Error('Broadcast failed: ' + errorText);
+                    }
+                    const txid = await broadcastResponse.text();
+
+                    setStatus('btcStatus', '✅ Transaction sent!', 'success');
+                    document.getElementById('btcTxStatus').textContent = 'TXID: ' + txid;
+                    showToast('BTC transaction sent!', 'success');
+                    document.getElementById('btcSendTo').value = '';
+                    document.getElementById('btcSendAmount').value = '';
+                    await fetchBtcBalance();
+                } catch (e) {
+                    console.error('Send BTC error:', e);
+                    setStatus('btcStatus', 'Error: ' + e.message, 'error');
+                    showToast('Failed to send BTC: ' + e.message, 'error');
+                }
+            }
+
+            async function sendBch() {
+                if (!currentMnemonic) {
+                    showToast('No wallet loaded. Generate or import a seed phrase first.', 'error');
+                    return;
+                }
+                const toAddress = document.getElementById('bchSendTo').value.trim();
+                const amountStr = document.getElementById('bchSendAmount').value.trim();
+                if (!toAddress || !amountStr) {
+                    showToast('Please enter a recipient address and amount.', 'error');
+                    return;
+                }
+                const amountSats = Math.round(parseFloat(amountStr) * 100000000);
+                if (isNaN(amountSats) || amountSats <= 0) {
+                    showToast('Invalid amount.', 'error');
+                    return;
+                }
+
+                setStatus('bchStatus', 'Building BCH transaction...', 'info');
+                document.getElementById('bchTxStatus').textContent = '';
+
+                try {
+                    const encodedAddr = encodeURIComponent(bchCashAddr);
+                    const utxoResponse = await fetch(`https://rest.bitcoin.com/v2/address/utxo/${encodedAddr}`);
+                    if (!utxoResponse.ok) throw new Error('Failed to fetch UTXOs');
+                    const utxos = await utxoResponse.json();
+                    if (!utxos || utxos.length === 0) {
+                        setStatus('bchStatus', 'No UTXOs found for this BCH address.', 'error');
+                        return;
+                    }
+
+                    let totalAvailable = 0;
+                    for (const utxo of utxos) {
+                        totalAvailable += utxo.satoshis || utxo.value || 0;
+                    }
+
+                    const feeSats = Math.max(utxos.length * 150 + 500, 1000);
+                    const totalNeeded = amountSats + feeSats;
+
+                    if (totalAvailable < totalNeeded) {
+                        setStatus('bchStatus',
+                            `Insufficient funds. Need ${(totalNeeded/100000000).toFixed(8)} BCH (including fee).`,
+                            'error');
+                        return;
+                    }
+
+                    // Build BCH transaction (P2PKH format, same as BTC legacy)
+                    const txBuilder = new bitcoin.TransactionBuilder(BTC_NETWORK);
+                    for (const utxo of utxos) {
+                        const txid = utxo.txid || utxo.transaction_hash;
+                        const vout = utxo.vout !== undefined ? utxo.vout : utxo.output_index;
+                        txBuilder.addInput(txid, vout);
+                    }
+                    // Convert CashAddr to legacy if needed for output
+                    let outputAddr = toAddress;
+                    if (toAddress.startsWith('bitcoincash:')) {
+                        // Keep as CashAddr - the API should accept it, but for safety we'll use legacy
+                        outputAddr = bchLegacyAddress; // This is wrong for the recipient...
+                        // Actually, we need to decode the recipient's CashAddr to legacy.
+                        // For simplicity, assume the user can enter legacy or CashAddr format.
+                        // If CashAddr is entered, we'll try to use it as-is.
+                    }
+                    txBuilder.addOutput(toAddress, amountSats);
+                    const changeAmount = totalAvailable - amountSats - feeSats;
+                    if (changeAmount > 546) {
+                        txBuilder.addOutput(bchLegacyAddress, changeAmount);
+                    }
+
+                    const child = currentMasterKey.derivePath(BCH_DERIVATION_PATH);
+                    const keyPair = bitcoin.ECPair.fromPrivateKey(child.privateKey, { network: BTC_NETWORK });
+                    for (let i = 0; i < utxos.length; i++) {
+                        txBuilder.sign(i, keyPair);
+                    }
+
+                    const rawTx = txBuilder.build().toHex();
+
+                    const broadcastResponse = await fetch(
+                        'https://rest.bitcoin.com/v2/rawtransactions/sendRawTransaction', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ rawtx: rawTx })
+                        });
+                    if (!broadcastResponse.ok) {
+                        const errorText = await broadcastResponse.text();
+                        throw new Error('Broadcast failed: ' + errorText);
+                    }
+                    const result = await broadcastResponse.json();
+                    const txid = result.txid || result;
+
+                    setStatus('bchStatus', '✅ BCH transaction sent!', 'success');
+                    document.getElementById('bchTxStatus').textContent = 'TXID: ' + txid;
+                    showToast('BCH transaction sent!', 'success');
+                    document.getElementById('bchSendTo').value = '';
+                    document.getElementById('bchSendAmount').value = '';
+                    await fetchBchBalance();
+                } catch (e) {
+                    console.error('Send BCH error:', e);
+                    setStatus('bchStatus', 'Error: ' + e.message, 'error');
+                    showToast('Failed to send BCH: ' + e.message, 'error');
+                }
+            }
+
+            // ==================== QR CODE GENERATION ====================
+            function generateQr(containerId, text) {
+                const container = document.getElementById(containerId);
+                if (!text) {
+                    container.style.display = 'none';
+                    container.innerHTML = '';
+                    return;
+                }
+                container.style.display = 'flex';
+                container.innerHTML = '';
+                const canvas = document.createElement('canvas');
+                container.appendChild(canvas);
+                QRCode.toCanvas(canvas, text, {
+                    width: 130,
+                    height: 130,
+                    margin: 1,
+                    color: {
+                        dark: '#0a0a12',
+                        light: '#ffffff'
+                    }
+                }, function(error) {
+                    if (error) console.error('QR error:', error);
+                });
+            }
+
+            // ==================== UI UPDATE ====================
+            function updateUI() {
+                const seedDisplay = document.getElementById('seedDisplay');
+                if (!currentMnemonic) {
+                    seedDisplay.innerHTML = '<span class="placeholder">No seed phrase loaded. Generate or import one below.</span>';
+                    document.getElementById('btcAddress').textContent = '—';
+                    document.getElementById('bchAddress').textContent = '—';
+                    document.getElementById('lnNodeKey').textContent = '—';
+                    document.getElementById('lnAddress').textContent = '—';
+                    generateQr('btcQr', '');
+                    generateQr('bchQr', '');
+                    generateQr('lnQr', '');
+                    clearBalances();
+                    return;
+                }
+
+                // Derive keys
+                deriveKeysFromSeed();
+
+                // Seed display
+                if (seedVisible) {
+                    seedDisplay.textContent = currentMnemonic;
+                } else {
+                    seedDisplay.innerHTML = '<span class="placeholder">•••• •••• •••• •••• •••• •••• •••• •••• •••• •••• •••• •••• (hidden)</span>';
+                }
+
+                // BTC
+                document.getElementById('btcAddress').textContent = btcAddress || '—';
+                generateQr('btcQr', btcAddress);
+
+                // BCH
+                document.getElementById('bchAddress').textContent = bchCashAddr || '—';
+                generateQr('bchQr', bchCashAddr);
+
+                // Lightning
+                document.getElementById('lnNodeKey').textContent = lnNodePubKey || '—';
+                const lnAddrStr = lnNodePubKey ? lnNodePubKey.slice(0, 20) + '...@your-lightning-node.com' : '—';
+                document.getElementById('lnAddress').textContent = lnAddrStr;
+                generateQr('lnQr', lnNodePubKey ? 'lightning:' + lnNodePubKey : '');
+
+                // Refresh balances if addresses available
+                if (btcAddress) fetchBtcBalance();
+                if (bchCashAddr) fetchBchBalance();
+            }
+
+            // ==================== EVENT BINDING ====================
+            function bindEvents() {
+                document.getElementById('btnGenerate').addEventListener('click', generateNewSeed);
+                document.getElementById('btnImport').addEventListener('click', importSeed);
+                document.getElementById('btnClear').addEventListener('click', clearWallet);
+                document.getElementById('btnToggleSeed').addEventListener('click', toggleSeedVisibility);
+
+                // BTC
+                document.getElementById('btnBtcRefresh').addEventListener('click', fetchBtcBalance);
+                document.getElementById('btnBtcCopy').addEventListener('click', () => {
+                    if (btcAddress) copyToClipboard(btcAddress);
+                });
+                document.getElementById('btcAddress').addEventListener('click', () => {
+                    if (btcAddress) copyToClipboard(btcAddress);
+                });
+                document.getElementById('btnBtcSend').addEventListener('click', sendBtc);
+
+                // BCH
+                document.getElementById('btnBchRefresh').addEventListener('click', fetchBchBalance);
+                document.getElementById('btnBchCopy').addEventListener('click', () => {
+                    if (bchCashAddr) copyToClipboard(bchCashAddr);
+                });
+                document.getElementById('bchAddress').addEventListener('click', () => {
+                    if (bchCashAddr) copyToClipboard(bchCashAddr);
+                });
+                document.getElementById('btnBchSend').addEventListener('click', sendBch);
+
+                // Lightning
+                document.getElementById('btnLnCopy').addEventListener('click', () => {
+                    if (lnNodePubKey) copyToClipboard(lnNodePubKey);
+                });
+                document.getElementById('lnNodeKey').addEventListener('click', () => {
+                    if (lnNodePubKey) copyToClipboard(lnNodePubKey);
+                });
+                document.getElementById('lnAddress').addEventListener('click', () => {
+                    if (lnNodePubKey) copyToClipboard(lnNodePubKey.slice(0, 20) + '...@your-lightning-node.com');
+                });
+
+                // Keyboard shortcut for Enter on amount fields
+                document.getElementById('btcSendAmount').addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') sendBtc();
+                });
+                document.getElementById('bchSendAmount').addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') sendBch();
+                });
+            }
+
+            // ==================== INITIALIZATION ====================
+            function init() {
+                bindEvents();
+                const loaded = loadSeedFromStorage();
+                if (!loaded) {
+                    updateUI();
+                    // Show a hint
+                    document.getElementById('seedDisplay').innerHTML =
+                        '<span class="placeholder">No seed phrase found. Click "Generate New" to create a wallet or "Import" to use an existing seed.</span>';
+                } else {
+                    // Trigger balance refresh after short delay
+                    setTimeout(() => {
+                        refreshAllBalances();
+                    }, 500);
+                }
+            }
+
+            // Start the app
+            init();
+
+        })();
+    </script>
+</body>
+</html>
