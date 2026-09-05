@@ -10,6 +10,21 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js">
     </script>
+    <!--
+        bitcoinjs-lib@5.2.0 does NOT include BIP32 (HD key derivation) — as of v5
+        that was split into a separate "bip32" package, so bitcoin.bip32 is
+        undefined and every seed action used to throw silently.
+
+        NOTE: an earlier fix loaded a BIP32 library as an ES module. That broke
+        under file:// (opening the html file directly) because browsers refuse
+        to load <script type="module"> / import-mapped modules from a local
+        file origin — which killed every button, not just the seed ones. So
+        this fix stays 100% classical <script> tags: CryptoJS gives us a
+        battle-tested HMAC-SHA512, and the BIP32 derivation itself (a small,
+        well-defined algorithm) is implemented directly below in plain JS.
+    -->
+    <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.2.0/crypto-js.js">
+    </script>
     <style>
         :root {
             --bg: #0a0a12;
@@ -562,6 +577,123 @@
 
             const BTC_NETWORK = bitcoin.networks.bitcoin;
 
+            // ==================== BIP32 (HD KEY DERIVATION) ====================
+            // Implemented directly in plain JS (classical <script>, no ES modules,
+            // no bundler) since bitcoinjs-lib@5.2.0 does not include it. HMAC-SHA512
+            // is delegated to CryptoJS (audited, widely-deployed); everything else
+            // (CKDpriv per BIP32, path parsing) is the standard algorithm.
+
+            const SECP256K1_N = BigInt('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141');
+
+            function bytesToHex(bytes) {
+                let hex = '';
+                for (let i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, '0');
+                return hex;
+            }
+
+            function hexToBytes(hex) {
+                const bytes = new Uint8Array(hex.length / 2);
+                for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+                return bytes;
+            }
+
+            function bytesToBigInt(bytes) {
+                return BigInt('0x' + bytesToHex(bytes));
+            }
+
+            function bigIntToBytes32(num) {
+                let hex = num.toString(16);
+                while (hex.length < 64) hex = '0' + hex;
+                return hexToBytes(hex);
+            }
+
+            function concatBytes(arrays) {
+                let len = 0;
+                for (const a of arrays) len += a.length;
+                const out = new Uint8Array(len);
+                let offset = 0;
+                for (const a of arrays) { out.set(a, offset); offset += a.length; }
+                return out;
+            }
+
+            function serUint32BE(n) {
+                const buf = new Uint8Array(4);
+                buf[0] = Math.floor(n / 0x1000000) & 0xff;
+                buf[1] = Math.floor(n / 0x10000) & 0xff;
+                buf[2] = Math.floor(n / 0x100) & 0xff;
+                buf[3] = n & 0xff;
+                return buf;
+            }
+
+            function hmacSha512(keyBytes, dataBytes) {
+                const keyWA = CryptoJS.enc.Hex.parse(bytesToHex(keyBytes));
+                const dataWA = CryptoJS.enc.Hex.parse(bytesToHex(dataBytes));
+                const resultWA = CryptoJS.HmacSHA512(dataWA, keyWA);
+                return hexToBytes(resultWA.toString(CryptoJS.enc.Hex));
+            }
+
+            // Wraps a raw Uint8Array so bitcoinjs-lib's internal typeforce
+            // "is this a Buffer" checks accept it (they key off the `_isBuffer`
+            // marker, same trick real cross-bundle Buffer implementations use),
+            // while still being a genuine Uint8Array underneath.
+            function bufFrom(uint8arr) {
+                const b = new Uint8Array(uint8arr);
+                b._isBuffer = true;
+                return b;
+            }
+
+            function getPublicKeyFromPrivate(privBytes) {
+                // bitcoinjs-lib's own ECPair already bundles the secp256k1 math
+                // we need (compressed pubkey from a private key) — reuse it
+                // instead of pulling in another EC library.
+                return bitcoin.ECPair.fromPrivateKey(bufFrom(privBytes), { network: BTC_NETWORK }).publicKey;
+            }
+
+            function ckdPriv(kPar, cPar, index) {
+                const indexBuf = serUint32BE(index);
+                let data;
+                if (index >= 0x80000000) {
+                    data = concatBytes([new Uint8Array([0]), kPar, indexBuf]);
+                } else {
+                    data = concatBytes([getPublicKeyFromPrivate(kPar), indexBuf]);
+                }
+                const I = hmacSha512(cPar, data);
+                const IL = I.slice(0, 32);
+                const IR = I.slice(32, 64);
+                const ilNum = bytesToBigInt(IL);
+                if (ilNum >= SECP256K1_N) throw new Error('Invalid derivation (IL >= N), try next index');
+                const kiNum = (ilNum + bytesToBigInt(kPar)) % SECP256K1_N;
+                if (kiNum === 0n) throw new Error('Invalid derivation (ki == 0), try next index');
+                return { privateKey: bigIntToBytes32(kiNum), chainCode: IR };
+            }
+
+            function SimpleHDKey(privateKey, chainCode) {
+                this.privateKey = privateKey;
+                this.chainCode = chainCode;
+            }
+            Object.defineProperty(SimpleHDKey.prototype, 'publicKey', {
+                get: function() { return getPublicKeyFromPrivate(this.privateKey); }
+            });
+            SimpleHDKey.prototype.derive = function(path) {
+                let node = this;
+                const segments = path.split('/');
+                for (const seg of segments) {
+                    if (seg === 'm' || seg === '') continue;
+                    const hardened = seg.endsWith("'") || seg.toLowerCase().endsWith('h');
+                    const numPart = hardened ? seg.slice(0, -1) : seg;
+                    let idx = parseInt(numPart, 10);
+                    if (hardened) idx += 0x80000000;
+                    const child = ckdPriv(node.privateKey, node.chainCode, idx);
+                    node = new SimpleHDKey(child.privateKey, child.chainCode);
+                }
+                return node;
+            };
+
+            function hdKeyFromMasterSeed(seedBytes) {
+                const I = hmacSha512(new TextEncoder().encode('Bitcoin seed'), seedBytes);
+                return new SimpleHDKey(I.slice(0, 32), I.slice(32, 64));
+            }
+
             // ==================== STATE ====================
             let currentMnemonic = null;
             let currentSeed = null;
@@ -762,21 +894,21 @@
                 if (!currentSeed) return false;
                 try {
                     // BTC (P2WPKH - SegWit)
-                    const btcChild = currentMasterKey.derivePath(BTC_DERIVATION_PATH);
+                    const btcChild = currentMasterKey.derive(BTC_DERIVATION_PATH);
                     const btcPubKey = btcChild.publicKey;
                     const btcPubKeyHash = bitcoin.crypto.hash160(btcPubKey);
                     btcAddress = toBech32Address(btcPubKeyHash, 'bc', 0);
                     btcLegacyAddress = toBech32Address(btcPubKeyHash, 'bc', 0); // placeholder, will override
 
                     // BTC Legacy (P2PKH)
-                    const btcLegacyChild = currentMasterKey.derivePath(BTC_LEGACY_PATH);
+                    const btcLegacyChild = currentMasterKey.derive(BTC_LEGACY_PATH);
                     const btcLegacyPubKey = btcLegacyChild.publicKey;
                     const btcLegacyPubKeyHash = bitcoin.crypto.hash160(btcLegacyPubKey);
                     const legacyP2pkh = bitcoin.payments.p2pkh({ pubkey: btcLegacyPubKey, network: BTC_NETWORK });
                     btcLegacyAddress = legacyP2pkh.address;
 
                     // BCH (P2PKH with CashAddr encoding)
-                    const bchChild = currentMasterKey.derivePath(BCH_DERIVATION_PATH);
+                    const bchChild = currentMasterKey.derive(BCH_DERIVATION_PATH);
                     const bchPubKey = bchChild.publicKey;
                     const bchPubKeyHash = bitcoin.crypto.hash160(bchPubKey);
                     bchCashAddr = toCashAddr(Array.from(bchPubKeyHash), true);
@@ -784,7 +916,7 @@
                     bchLegacyAddress = bchLegacyP2pkh.address;
 
                     // Lightning Node Key
-                    const lnChild = currentMasterKey.derivePath(LN_NODE_KEY_PATH);
+                    const lnChild = currentMasterKey.derive(LN_NODE_KEY_PATH);
                     lnNodePubKey = lnChild.publicKey.toString('hex');
 
                     return true;
@@ -800,7 +932,7 @@
                     const mnemonic = bip39.generateMnemonic(128); // 12 words
                     currentMnemonic = mnemonic;
                     currentSeed = bip39.mnemonicToSeedSync(mnemonic);
-                    currentMasterKey = bitcoin.bip32.fromSeed(currentSeed, BTC_NETWORK);
+                    currentMasterKey = hdKeyFromMasterSeed(currentSeed);
                     localStorage.setItem(STORAGE_KEY, mnemonic);
                     seedVisible = true;
                     updateUI();
@@ -822,7 +954,7 @@
                 try {
                     currentMnemonic = normalized;
                     currentSeed = bip39.mnemonicToSeedSync(normalized);
-                    currentMasterKey = bitcoin.bip32.fromSeed(currentSeed, BTC_NETWORK);
+                    currentMasterKey = hdKeyFromMasterSeed(currentSeed);
                     localStorage.setItem(STORAGE_KEY, normalized);
                     seedVisible = true;
                     updateUI();
@@ -840,7 +972,7 @@
                         if (bip39.validateMnemonic(stored)) {
                             currentMnemonic = stored;
                             currentSeed = bip39.mnemonicToSeedSync(stored);
-                            currentMasterKey = bitcoin.bip32.fromSeed(currentSeed, BTC_NETWORK);
+                            currentMasterKey = hdKeyFromMasterSeed(currentSeed);
                             seedVisible = false;
                             updateUI();
                             return true;
@@ -1005,8 +1137,8 @@
                     }
 
                     // Sign inputs
-                    const child = currentMasterKey.derivePath(BTC_DERIVATION_PATH);
-                    const keyPair = bitcoin.ECPair.fromPrivateKey(child.privateKey, { network: BTC_NETWORK });
+                    const child = currentMasterKey.derive(BTC_DERIVATION_PATH);
+                    const keyPair = bitcoin.ECPair.fromPrivateKey(bufFrom(child.privateKey), { network: BTC_NETWORK });
                     for (let i = 0; i < usableUtxos.length; i++) {
                         txBuilder.sign(i, keyPair, undefined, undefined, usableUtxos[i].value);
                     }
@@ -1105,8 +1237,8 @@
                         txBuilder.addOutput(bchLegacyAddress, changeAmount);
                     }
 
-                    const child = currentMasterKey.derivePath(BCH_DERIVATION_PATH);
-                    const keyPair = bitcoin.ECPair.fromPrivateKey(child.privateKey, { network: BTC_NETWORK });
+                    const child = currentMasterKey.derive(BCH_DERIVATION_PATH);
+                    const keyPair = bitcoin.ECPair.fromPrivateKey(bufFrom(child.privateKey), { network: BTC_NETWORK });
                     for (let i = 0; i < utxos.length; i++) {
                         txBuilder.sign(i, keyPair);
                     }
