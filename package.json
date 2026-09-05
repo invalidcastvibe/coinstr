@@ -1,0 +1,25 @@
+{
+  "name": "tri-wallet",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "bip39": "^3.1.0",
+    "bip32": "^4.0.0",
+    "bitcoinjs-lib": "^6.1.5",
+    "tiny-secp256k1": "^2.2.3",
+    "mainnet-js": "^2.2.4",
+    "@breeztech/breez-sdk-liquid": "^0.8.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10",
+    "vite-plugin-wasm": "^3.3.0",
+    "vite-plugin-top-level-await": "^1.4.4",
+    "buffer": "^6.0.3"
+  }
+}
